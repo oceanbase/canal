@@ -1,3 +1,19 @@
+## 说明
+
+本仓库的`canal-for-ob`分支基于[canal](https://github.com/alibaba/canal)官方仓库`master`分支最新版代码，增加了对`OceanBase作为数据源进行增量数据同步`的支持。在该功能合入官方仓库前，由本仓库提供包含该功能点的安装包、文档和答疑服务。
+
+部署文档：[Canal for OB 部署流程](https://github.com/oceanbase/canal/wiki/Canal-for-OB-%E9%83%A8%E7%BD%B2%E6%B5%81%E7%A8%8B)
+
+安装包下载：https://github.com/oceanbase/canal/releases
+
+交流反馈：
+
+- 官方问答网站： https://open.oceanbase.com/answer
+- github issue：https://github.com/oceanbase/canal/issues
+- 钉钉群：33254054
+
+---
+
 [![build status](https://travis-ci.com/alibaba/canal.svg?branch=master)](https://travis-ci.com/alibaba/canal)
 [![codecov](https://codecov.io/gh/alibaba/canal/branch/master/graph/badge.svg)](https://codecov.io/gh/alibaba/canal)
 ![maven](https://img.shields.io/maven-central/v/com.alibaba.otter/canal.svg)
