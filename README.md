@@ -6,6 +6,12 @@
 
 安装包下载：https://github.com/oceanbase/canal/releases
 
+源码构建：
+
+```shell
+./mvnw clean package -DskipTests=true -Prelease
+```
+
 交流反馈：
 
 - 官方问答网站： https://open.oceanbase.com/answer

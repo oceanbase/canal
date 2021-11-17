@@ -329,7 +329,7 @@
                             <descriptors>
                                 <descriptor>${basedir}/src/main/assembly/release.xml</descriptor>
                             </descriptors>
-                            <finalName>canal.adapter-for-ob-rc1</finalName>
+                            <finalName>canal.adapter-for-ob-rc2</finalName>
                             <outputDirectory>${project.basedir}/../../target</outputDirectory>
                         </configuration>
                     </plugin>
