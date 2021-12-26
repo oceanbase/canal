@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import com.alibaba.druid.filter.stat.StatFilter;
 import com.alibaba.druid.pool.DruidDataSource;
+import com.alibaba.druid.util.JdbcUtils;
 import com.alibaba.otter.canal.client.adapter.OuterAdapter;
 import com.alibaba.otter.canal.client.adapter.rdb.config.ConfigLoader;
 import com.alibaba.otter.canal.client.adapter.rdb.config.MappingConfig;
@@ -75,6 +76,11 @@ public class RdbAdapter implements OuterAdapter {
     @Override
     public void init(OuterAdapterConfig configuration, Properties envProperties) {
         this.envProperties = envProperties;
+
+        // 从jdbc url获取db类型
+        Map<String, String> properties = configuration.getProperties();
+        String dbType = JdbcUtils.getDbType(properties.get("jdbc.url"), null);
+
         Map<String, MappingConfig> rdbMappingTmp = ConfigLoader.load(envProperties);
         // 过滤不匹配的key的配置
         rdbMappingTmp.forEach((key, mappingConfig) -> {
@@ -114,7 +120,6 @@ public class RdbAdapter implements OuterAdapter {
         }
 
         // 初始化连接池
-        Map<String, String> properties = configuration.getProperties();
         dataSource = new DruidDataSource();
         dataSource.setDriverClassName(properties.get("jdbc.driverClassName"));
         dataSource.setUrl(properties.get("jdbc.url"));
@@ -127,6 +132,8 @@ public class RdbAdapter implements OuterAdapter {
         dataSource.setTimeBetweenEvictionRunsMillis(60000);
         dataSource.setMinEvictableIdleTimeMillis(300000);
         dataSource.setUseUnfairLock(true);
+        dataSource.setDbType(dbType);
+
         // List<String> array = new ArrayList<>();
         // array.add("set names utf8mb4;");
         // dataSource.setConnectionInitSqls(array);
@@ -236,7 +243,7 @@ public class RdbAdapter implements OuterAdapter {
     public Map<String, Object> count(String task) {
         MappingConfig config = rdbMapping.get(task);
         MappingConfig.DbMapping dbMapping = config.getDbMapping();
-        String sql = "SELECT COUNT(1) AS cnt FROM " + SyncUtil.getDbTableName(dbMapping);
+        String sql = "SELECT COUNT(1) AS cnt FROM " + SyncUtil.getDbTableName(dbMapping, dataSource.getDbType());
         Connection conn = null;
         Map<String, Object> res = new LinkedHashMap<>();
         try {
@@ -262,7 +269,7 @@ public class RdbAdapter implements OuterAdapter {
                 }
             }
         }
-        res.put("targetTable", SyncUtil.getDbTableName(dbMapping));
+        res.put("targetTable", SyncUtil.getDbTableName(dbMapping, dataSource.getDbType()));
 
         return res;
     }
