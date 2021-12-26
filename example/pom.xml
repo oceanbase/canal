@@ -189,7 +189,7 @@
 								<descriptor>${basedir}/src/main/assembly/release.xml</descriptor>
 							</descriptors>
 							<!-- 如果一个应用的包含多个deploy模块，如果使用同样的包名， 如果把它们复制的一个目录中可能会失败，所以包名加了 artifactId以示区分 -->
-							<finalName>${project.artifactId}-for-ob-rc2</finalName>
+							<finalName>${project.artifactId}-for-ob-rc3</finalName>
 							<!-- scm 要求 release 模式打出的包放到顶级目录下的target子目录中 -->
 							<outputDirectory>${project.parent.build.directory}</outputDirectory>
 						</configuration>
