@@ -210,7 +210,7 @@
                             <descriptors>
                                 <descriptor>${basedir}/src/main/assembly/release.xml</descriptor>
                             </descriptors>
-                            <finalName>canal.admin-for-ob-rc3</finalName>
+                            <finalName>canal.admin-for-ob-rc4</finalName>
                             <outputDirectory>${project.basedir}/../../target</outputDirectory>
                         </configuration>
                     </plugin>
