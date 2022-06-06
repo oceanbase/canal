@@ -1,5 +1,6 @@
 package com.alibaba.otter.canal.parse.inbound.oceanbase.logproxy;
 
+import com.oceanbase.clogproxy.client.config.ClientConf;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 
@@ -11,7 +12,6 @@ import java.net.InetSocketAddress;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.alibaba.otter.canal.parse.exception.CanalParseException;
 import com.alibaba.otter.canal.parse.inbound.MultiStageCoprocessor;
 import com.alibaba.otter.canal.parse.inbound.SinkFunction;
 import com.alibaba.otter.canal.parse.inbound.oceanbase.OceanBaseConnection;
@@ -34,15 +34,8 @@ public class LogProxyConnection implements OceanBaseConnection {
     private final LogProxyClient client;
     private       boolean        startDump = false;
 
-    public LogProxyConnection(InetSocketAddress clientAddress, ObReaderConfig logProxyConfig, SslConfig sslConfig) {
-        SslContext sslContext;
-        try {
-            sslContext = sslConfig.sslContext();
-        } catch (Throwable e) {
-            throw new CanalParseException(e);
-        }
-
-        client = new LogProxyClient(clientAddress.getHostString(), clientAddress.getPort(), logProxyConfig, sslContext);
+    public LogProxyConnection(InetSocketAddress clientAddress, ObReaderConfig obReaderConfig, ClientConf clientConf) {
+        client = new LogProxyClient(clientAddress.getHostString(), clientAddress.getPort(), obReaderConfig, clientConf);
     }
 
     @Override

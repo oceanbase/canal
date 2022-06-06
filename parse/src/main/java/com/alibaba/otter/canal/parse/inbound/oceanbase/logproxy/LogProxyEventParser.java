@@ -1,7 +1,9 @@
 package com.alibaba.otter.canal.parse.inbound.oceanbase.logproxy;
 
+import java.util.Collections;
 import java.util.List;
 
+import com.alibaba.otter.canal.common.utils.JsonUtils;
 import com.alibaba.otter.canal.parse.CanalEventParser;
 import com.alibaba.otter.canal.parse.inbound.AbstractBinlogParser;
 import com.alibaba.otter.canal.parse.inbound.MultiStageCoprocessor;
@@ -11,8 +13,10 @@ import com.alibaba.otter.canal.parse.support.AuthenticationInfo;
 import com.alibaba.otter.canal.protocol.CanalEntry;
 import com.alibaba.otter.canal.protocol.position.EntryPosition;
 import com.alibaba.otter.canal.protocol.position.LogPosition;
+import com.oceanbase.clogproxy.client.config.ClientConf;
 import com.oceanbase.clogproxy.client.config.ObReaderConfig;
 import com.oceanbase.oms.logmessage.LogMessage;
+import org.apache.commons.lang.StringUtils;
 
 /**
  * 基于LogProxy的CanalEventParser实现
@@ -27,6 +31,8 @@ public class LogProxyEventParser extends AbstractOceanBaseEventParser<LogMessage
      * config to build SslContext
      */
     private LogProxyConnection.SslConfig sslConfig;
+    private String workingMode;
+    private String clientId;
 
     @Override
     public void start() {
@@ -43,8 +49,23 @@ public class LogProxyEventParser extends AbstractOceanBaseEventParser<LogMessage
         if (startPosition != null) {
             logProxyConfig.setStartTimestamp(startPosition.getTimestamp()/1000);
         }
-        logger.info("Build connection with config {}", logProxyConfig.toString());
-        return new LogProxyConnection(logProxyInfo.getAddress(), logProxyConfig, sslConfig);
+        if (StringUtils.isNotBlank(workingMode)) {
+            logProxyConfig.setExtraConfigs(Collections.singletonMap("working_mode", workingMode));
+        }
+        logger.info("Connection config {}", logProxyConfig.toString());
+
+        ClientConf.Builder builder = ClientConf.builder();
+        try {
+            builder.sslContext(sslConfig.sslContext());
+        } catch (Exception e) {
+            builder.sslContext(null);
+        }
+        if (StringUtils.isNotBlank(clientId)) {
+            builder.clientId(clientId);
+        }
+        ClientConf clientConf = builder.build();
+        logger.info("Client config {}", JsonUtils.marshalToString(clientConf));
+        return new LogProxyConnection(logProxyInfo.getAddress(), logProxyConfig, clientConf);
     }
 
     @Override
@@ -97,5 +118,13 @@ public class LogProxyEventParser extends AbstractOceanBaseEventParser<LogMessage
 
     public void setSslConfig(LogProxyConnection.SslConfig sslConfig) {
         this.sslConfig = sslConfig;
+    }
+
+    public void setWorkingMode(String workingMode) {
+        this.workingMode = workingMode;
+    }
+
+    public void setClientId(String clientId) {
+        this.clientId = clientId;
     }
 }

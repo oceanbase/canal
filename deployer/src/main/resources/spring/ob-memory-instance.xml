@@ -34,8 +34,13 @@
                 <property name="password" value="${canal.instance.oceanbase.password}"/>
                 <property name="startTimestamp" value="${canal.instance.oceanbase.startTimestamp:0}"/>
                 <property name="tableWhiteList" value="${canal.instance.filter.regex}"/>
+                <property name="clusterUrl" value="${canal.instance.oceanbase.clusterUrl}"/>
+                <property name="timezone" value="${canal.instance.oceanbase.timezone}"/>
             </bean>
         </property>
+
+        <property name="workingMode" value="${canal.instance.oceanbase.obcdc.working_mode}"/>
+        <property name="clientId" value="${canal.instance.oceanbase.logproxy.clientId}"/>
 
         <property name="logProxyInfo">
             <bean class="com.alibaba.otter.canal.parse.support.AuthenticationInfo" init-method="initPwd">
