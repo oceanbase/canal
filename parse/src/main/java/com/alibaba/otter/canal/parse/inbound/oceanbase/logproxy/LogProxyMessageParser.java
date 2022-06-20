@@ -202,7 +202,7 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
             table = ddlResult.getTableName();
 
             // LogProxy对DDL没有过滤，而且ddl的message中没有表名，这里单独处理
-            String tableFullName = dbName + "." + table;
+            String tableFullName = String.format("%s.%s.%s", tenant, dbName, table);
             if (nameFilter != null && !nameFilter.filter(tableFullName)) {
                 return null;
             }
