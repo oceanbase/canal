@@ -62,10 +62,11 @@
                 <property name="tableWhiteList" value="${canal.instance.filter.regex}"/>
                 <property name="clusterUrl" value="${canal.instance.oceanbase.clusterUrl}"/>
                 <property name="timezone" value="${canal.instance.oceanbase.timezone}"/>
+                <property name="workingMode" value="${canal.instance.oceanbase.workingMode}"/>
+                <property name="extraConfigs" value="#{${canal.instance.oceanbase.obcdc.extraConfigs}}"/>
             </bean>
         </property>
 
-        <property name="workingMode" value="${canal.instance.oceanbase.obcdc.working_mode}"/>
         <property name="clientId" value="${canal.instance.oceanbase.logproxy.clientId}"/>
 
         <property name="logProxyInfo">
