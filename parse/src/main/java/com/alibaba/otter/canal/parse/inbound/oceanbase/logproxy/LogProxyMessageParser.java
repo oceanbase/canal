@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.alibaba.fastjson.JSONObject;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -228,7 +229,7 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
 
     private CanalEntry.Entry parseHeartBeatRecord(LogMessage message) {
         CanalEntry.Header.Builder headerBuilder = CanalEntry.Header.newBuilder();
-        headerBuilder.setExecuteTime(Long.parseLong(message.getTimestamp())*1000);
+        headerBuilder.setExecuteTime(getTimestamp(message) * 1000);
         headerBuilder.setEventType(CanalEntry.EventType.MHEARTBEAT);
         CanalEntry.Entry.Builder entryBuilder = CanalEntry.Entry.newBuilder();
         entryBuilder.setHeader(headerBuilder.build());
@@ -247,7 +248,7 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
         headerBuilder.setVersion(message.getVersion());
         headerBuilder.setLogfileOffset(message.getFileOffset());
         headerBuilder.setEventType(eventType);
-        headerBuilder.setExecuteTime(Long.parseLong(message.getTimestamp())*1000);
+        headerBuilder.setExecuteTime(getTimestamp(message) * 1000);
 
         if (message.getOB10UniqueId() != null) {
             headerBuilder.setGtid(message.getOB10UniqueId());
@@ -331,6 +332,20 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
             }
         }
         return rowDataBuilder.build();
+    }
+
+    private long getTimestamp(LogMessage message) {
+        long timestamp;
+        if (DataMessage.Record.Type.HEARTBEAT.equals(message.getOpt())) {
+            timestamp = Long.parseLong(message.getTimestamp());
+        } else {
+            timestamp = message.getFileNameOffset();
+        }
+        if (timestamp < 0) {
+            logger.warn("Get timestamp failed, use global checkpoint instead. Log message: " + JSONObject.toJSONString(message));
+            timestamp = Long.parseLong(message.getSafeTimestamp());
+        }
+        return timestamp;
     }
 
     /**
