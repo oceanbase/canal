@@ -304,7 +304,14 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
             } else {
                 columnBuilder.setMysqlType(MYSQL_TYPE.getOrDefault(field.getType(), ""));
                 columnBuilder.setSqlType(JAVA_TYPE.getOrDefault(field.getType(), 0));
-                columnBuilder.setValue(field.getValue().toString(charset.name()));
+                //columnBuilder.setValue(field.getValue().toString(charset.name()));
+                //判断是否是BLOB类型
+                if (JAVA_TYPE.getOrDefault(field.getType(), 0) == Types.BLOB) {
+                // columnBuilder.setValue(new string(field.getValue().getBytes(), "UTF8"));
+                   columnBuilder.setValue(new String(field.getValue().getBytes(), StandardCharsets.ISO_8859_1));
+                } else {
+                   columnBuilder.setValue(field.getValue().toString(charset.name()));
+                }
             }
 
             switch (message.getOpt()) {
