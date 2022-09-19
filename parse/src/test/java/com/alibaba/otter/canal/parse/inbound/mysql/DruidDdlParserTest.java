@@ -57,6 +57,38 @@ public class DruidDdlParserTest {
         Assert.assertNotNull(result);
         Assert.assertEquals("performance_schema", result.getSchemaName());
         Assert.assertEquals("cond_instances", result.getTableName());
+
+        queryString = "CREATE TABLE `ob_table` (\n" +
+                "  `svr_ip` varchar(46) NOT NULL,\n" +
+                "  `svr_port` bigint(20) NOT NULL,\n" +
+                "  `tenant_id` bigint(20) NOT NULL,\n" +
+                "  `request_id` bigint(20) NOT NULL,\n" +
+                "  PRIMARY KEY (`svr_ip`, `svr_port`, `tenant_id`, `request_id`),\n" +
+                "  KEY `all_virtual_sql_audit_i1` (`tenant_id`, `request_id`) BLOCK_SIZE 16384 LOCAL\n" +
+                ") DEFAULT CHARSET = utf8mb4 ROW_FORMAT = COMPACT COMPRESSION = 'zstd_1.3.8' REPLICA_NUM = 1 BLOCK_SIZE = 16384 USE_BLOOM_FILTER = FALSE TABLET_SIZE = 134217728 PCTFREE = 0\n" +
+                " partition by key(svr_ip, svr_port)\n" +
+                "(partition p0,\n" +
+                "partition p1,\n" +
+                "partition p2,\n" +
+                "partition p3,\n" +
+                "partition p4,\n" +
+                "partition p5,\n" +
+                "partition p6,\n" +
+                "partition p7,\n" +
+                "partition p8,\n" +
+                "partition p9,\n" +
+                "partition p10,\n" +
+                "partition p11,\n" +
+                "partition p12,\n" +
+                "partition p13,\n" +
+                "partition p14,\n" +
+                "partition p15,\n" +
+                "partition p16,\n" +
+                "partition p17)";
+        result = DruidDdlParser.parse(queryString, "ob").get(0);
+        Assert.assertNotNull(result);
+        Assert.assertEquals("ob", result.getSchemaName());
+        Assert.assertEquals("ob_table", result.getTableName());
     }
 
     @Test
