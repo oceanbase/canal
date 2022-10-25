@@ -53,6 +53,7 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
         put(DataMessage.Record.Field.Type.ENUM, "enum");
         put(DataMessage.Record.Field.Type.SET, "set");
         put(DataMessage.Record.Field.Type.BLOB, "blob");
+        put(DataMessage.Record.Field.Type.CLOB, "clob");
         put(DataMessage.Record.Field.Type.GEOMETRY, "geometry");
         put(DataMessage.Record.Field.Type.JSON, "json");
         put(DataMessage.Record.Field.Type.BINARY, "binary");
@@ -81,6 +82,7 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
         put(DataMessage.Record.Field.Type.ENUM, Types.CHAR);
         put(DataMessage.Record.Field.Type.SET, Types.CHAR);
         put(DataMessage.Record.Field.Type.BLOB, Types.BLOB);
+        put(DataMessage.Record.Field.Type.CLOB, Types.CLOB);
         put(DataMessage.Record.Field.Type.GEOMETRY, Types.VARCHAR);
         put(DataMessage.Record.Field.Type.JSON, Types.VARCHAR);
         put(DataMessage.Record.Field.Type.BINARY, Types.BINARY);

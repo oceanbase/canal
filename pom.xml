@@ -275,7 +275,7 @@
             <dependency>
                 <groupId>com.alibaba</groupId>
                 <artifactId>druid</artifactId>
-                <version>1.2.12-SNAPSHOT</version>
+                <version>1.2.14</version>
             </dependency>
             <dependency>
                 <groupId>com.lmax</groupId>
@@ -365,7 +365,7 @@
             <dependency>
                 <groupId>com.oceanbase.logclient</groupId>
                 <artifactId>logproxy-client</artifactId>
-                <version>1.0.6-SNAPSHOT</version>
+                <version>1.0.7</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
