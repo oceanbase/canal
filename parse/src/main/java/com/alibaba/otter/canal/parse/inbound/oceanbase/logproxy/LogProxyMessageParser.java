@@ -1,5 +1,6 @@
 package com.alibaba.otter.canal.parse.inbound.oceanbase.logproxy;
 
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Types;
 import java.util.Arrays;
@@ -155,7 +156,7 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
 
     }
 
-    private CanalEntry.Entry parseDmlRecord(LogMessage message, CanalEntry.EventType eventType) {
+    private CanalEntry.Entry parseDmlRecord(LogMessage message, CanalEntry.EventType eventType) throws UnsupportedEncodingException {
         messageCount();
         if (filterQueryDml || (filterDmlInsert && eventType.equals(CanalEntry.EventType.INSERT)) || (filterDmlUpdate
                                                                                                      && eventType.equals(
@@ -274,7 +275,7 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
         return headerBuilder.build();
     }
 
-    private CanalEntry.RowData dmlRowData(LogMessage message) {
+    private CanalEntry.RowData dmlRowData(LogMessage message) throws UnsupportedEncodingException {
         String name = message.getDbName() + "." + message.getTableName();
         List<String> fieldWhiteList = fieldFilterMap.get(name.toUpperCase());
         List<String> fieldBlackList = fieldBlackFilterMap.get(name.toUpperCase());
@@ -309,10 +310,12 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
                 //columnBuilder.setValue(field.getValue().toString(charset.name()));
                 //判断是否是BLOB类型
                 if (JAVA_TYPE.getOrDefault(field.getType(), 0) == Types.BLOB) {
-                // columnBuilder.setValue(new string(field.getValue().getBytes(), "UTF8"));
-                   columnBuilder.setValue(new String(field.getValue().getBytes(), StandardCharsets.ISO_8859_1));
+                    // columnBuilder.setValue(new string(field.getValue().getBytes(), "UTF8"));
+                    columnBuilder.setValue(new String(field.getValue().getBytes(), StandardCharsets.ISO_8859_1));
+                } else if ("binary".equals(field.encoding)) {
+                    columnBuilder.setValue(new String(field.getValue().getBytes(), charset));
                 } else {
-                   columnBuilder.setValue(field.getValue().toString(charset.name()));
+                    columnBuilder.setValue(field.getValue().toString(StringUtils.isNotBlank(field.encoding) ? field.encoding : charset.name()));
                 }
             }
 
