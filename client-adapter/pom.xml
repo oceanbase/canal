@@ -114,32 +114,32 @@
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-core</artifactId>
-                <version>5.0.5.RELEASE</version>
+                <version>5.3.20</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-aop</artifactId>
-                <version>5.0.5.RELEASE</version>
+                <version>5.3.20</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-context</artifactId>
-                <version>5.0.5.RELEASE</version>
+                <version>5.3.20</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-jdbc</artifactId>
-                <version>5.0.5.RELEASE</version>
+                <version>5.3.20</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-orm</artifactId>
-                <version>5.0.5.RELEASE</version>
+                <version>5.3.20</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-test</artifactId>
-                <version>5.0.5.RELEASE</version>
+                <version>5.3.20</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
@@ -226,7 +226,7 @@
             <dependency>
                 <groupId>org.yaml</groupId>
                 <artifactId>snakeyaml</artifactId>
-                <version>1.19</version>
+                <version>1.32</version>
             </dependency>
             <dependency>
                 <groupId>org.powermock</groupId>
