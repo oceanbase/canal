@@ -163,6 +163,12 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
             CanalEntry.EventType.UPDATE)) || (filterDmlDelete && eventType.equals(CanalEntry.EventType.DELETE))) {
             return null;
         }
+
+        // 4.x 开始 libobcdc 不再支持库表级别的数据订阅，因此需要在消费端进行过滤
+        if (shouldBeFiltered(getTargetDbName(message.getDbName()), message.getTableName())) {
+            return null;
+        }
+
         CanalEntry.Header header = createHeader(message, eventType, 1);
         CanalEntry.RowData rowData = dmlRowData(message);
         CanalEntry.RowChange.Builder builder = CanalEntry.RowChange.newBuilder();
@@ -206,11 +212,7 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
             table = ddlResult.getTableName();
 
             // LogProxy对DDL没有过滤，而且ddl的message中没有表名，这里单独处理
-            String tableFullName = String.format("%s.%s.%s", tenant, dbName, table);
-            if (nameFilter != null && !nameFilter.filter(tableFullName)) {
-                return null;
-            }
-            if (nameBlackFilter != null && nameBlackFilter.filter(tableFullName)) {
+            if (shouldBeFiltered(dbName, table)) {
                 return null;
             }
 
@@ -228,6 +230,12 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
             rowChangeBuilder.setDdlSchemaName(dbName);
         }
         return createEntry(header, CanalEntry.EntryType.ROWDATA, rowChangeBuilder.build().toByteString());
+    }
+
+    private boolean shouldBeFiltered(String databaseName, String tableName) {
+        String tableFullName = String.format("%s.%s.%s", tenant, databaseName, tableName);
+        return (nameFilter != null && !nameFilter.filter(tableFullName))
+                || (nameBlackFilter != null && nameBlackFilter.filter(tableFullName));
     }
 
     private CanalEntry.Entry parseHeartBeatRecord(LogMessage message) {
