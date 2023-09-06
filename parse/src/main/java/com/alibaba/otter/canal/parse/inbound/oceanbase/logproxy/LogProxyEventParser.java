@@ -42,6 +42,9 @@ public class LogProxyEventParser extends AbstractOceanBaseEventParser<LogMessage
 
     @Override
     protected OceanBaseConnection buildOceanBaseConnection() {
+        // libobcdc 4.x only supports to subscribe clog of entire tenant
+        logProxyConfig.setTableWhiteList(String.format("%s.*.*", tenant));
+
         // priority of start position source: position manager > properties file > zero value
         EntryPosition startPosition = findStartPosition();
         if (startPosition != null) {
