@@ -1,8 +1,10 @@
 package com.alibaba.otter.canal.parse.inbound.mysql;
 
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.apache.commons.compress.utils.Lists;
 import com.alibaba.otter.canal.common.utils.NamedThreadFactory;
 import com.alibaba.otter.canal.parse.driver.mysql.packets.GTIDSet;
 import com.alibaba.otter.canal.parse.exception.CanalParseException;
@@ -27,11 +29,7 @@ import com.taobao.tddl.dbsync.binlog.LogBuffer;
 import com.taobao.tddl.dbsync.binlog.LogContext;
 import com.taobao.tddl.dbsync.binlog.LogDecoder;
 import com.taobao.tddl.dbsync.binlog.LogEvent;
-import com.taobao.tddl.dbsync.binlog.event.DeleteRowsLogEvent;
-import com.taobao.tddl.dbsync.binlog.event.FormatDescriptionLogEvent;
-import com.taobao.tddl.dbsync.binlog.event.RowsLogEvent;
-import com.taobao.tddl.dbsync.binlog.event.UpdateRowsLogEvent;
-import com.taobao.tddl.dbsync.binlog.event.WriteRowsLogEvent;
+import com.taobao.tddl.dbsync.binlog.event.*;
 
 /**
  * 针对解析器提供一个多阶段协同的处理
@@ -159,46 +157,69 @@ public class MysqlMultiStageCoprocessor extends AbstractMultiStageCoprocessor<My
                 }
 
                 int eventType = logEvent.getHeader().getType();
-                TableMeta tableMeta = null;
-                boolean needDmlParse = false;
-                switch (eventType) {
-                    case LogEvent.WRITE_ROWS_EVENT_V1:
-                    case LogEvent.WRITE_ROWS_EVENT:
-                        if (!filterDmlInsert) {
-                            tableMeta = logEventConvert.parseRowsEventForTableMeta((WriteRowsLogEvent) logEvent);
-                            needDmlParse = true;
-                        }
-                        break;
-                    case LogEvent.UPDATE_ROWS_EVENT_V1:
-                    case LogEvent.PARTIAL_UPDATE_ROWS_EVENT:
-                    case LogEvent.UPDATE_ROWS_EVENT:
-                        if (!filterDmlUpdate) {
-                            tableMeta = logEventConvert.parseRowsEventForTableMeta((UpdateRowsLogEvent) logEvent);
-                            needDmlParse = true;
-                        }
-                        break;
-                    case LogEvent.DELETE_ROWS_EVENT_V1:
-                    case LogEvent.DELETE_ROWS_EVENT:
-                        if (!filterDmlDelete) {
-                            tableMeta = logEventConvert.parseRowsEventForTableMeta((DeleteRowsLogEvent) logEvent);
-                            needDmlParse = true;
-                        }
-                        break;
-                    case LogEvent.ROWS_QUERY_LOG_EVENT:
-                        needDmlParse = true;
-                        break;
-                    default:
-                        CanalEntry.Entry entry = logEventConvert.parse(event.getEvent(), false);
-                        event.setEntry(entry);
-                }
+                boolean needIterate = false;
 
-                // 记录一下DML的表结构
-                event.setNeedDmlParse(needDmlParse);
-                event.setTable(tableMeta);
+                if (eventType == LogEvent.TRANSACTION_PAYLOAD_EVENT) {
+                    // https://github.com/alibaba/canal/issues/4388
+                    List<LogEvent> deLogEvents = decoder.processIterateDecode(logEvent, context);
+                    List<TableMeta> tableMetas = Lists.newArrayList();
+                    event.setNeedIterate(true);
+                    for (LogEvent deLogEvent : deLogEvents) {
+                        TableMeta table = processEvent(deLogEvent, event);
+                        tableMetas.add(table);
+                    }
+                    event.setIterateEvents(deLogEvents);
+                    event.setIterateTables(tableMetas);
+                } else {
+                    TableMeta table = processEvent(logEvent, event);
+                    event.setTable(table);
+                }
             } catch (Throwable e) {
                 exception = new CanalParseException(e);
                 throw exception;
             }
+        }
+
+        private TableMeta processEvent(LogEvent logEvent, MessageEvent event) {
+            TableMeta tableMeta = null;
+            boolean needDmlParse = false;
+            int eventType = logEvent.getHeader().getType();
+            switch (eventType) {
+                case LogEvent.WRITE_ROWS_EVENT_V1:
+                case LogEvent.WRITE_ROWS_EVENT:
+                    if (!filterDmlInsert) {
+                        tableMeta = logEventConvert.parseRowsEventForTableMeta((WriteRowsLogEvent) logEvent);
+                        needDmlParse = true;
+                    }
+                    break;
+                case LogEvent.UPDATE_ROWS_EVENT_V1:
+                case LogEvent.PARTIAL_UPDATE_ROWS_EVENT:
+                case LogEvent.UPDATE_ROWS_EVENT:
+                    if (!filterDmlUpdate) {
+                        tableMeta = logEventConvert.parseRowsEventForTableMeta((UpdateRowsLogEvent) logEvent);
+                        needDmlParse = true;
+                    }
+                    break;
+                case LogEvent.DELETE_ROWS_EVENT_V1:
+                case LogEvent.DELETE_ROWS_EVENT:
+                    if (!filterDmlDelete) {
+                        tableMeta = logEventConvert.parseRowsEventForTableMeta((DeleteRowsLogEvent) logEvent);
+                        needDmlParse = true;
+                    }
+                    break;
+                case LogEvent.ROWS_QUERY_LOG_EVENT:
+                    needDmlParse = true;
+                    break;
+                default:
+                    CanalEntry.Entry entry = logEventConvert.parse(event.getEvent(), false);
+                    event.setEntry(entry);
+            }
+
+            // 记录一下DML的表结构
+            if (needDmlParse && !event.isNeedDmlParse()) {
+                event.setNeedDmlParse(true);
+            }
+            return tableMeta;
         }
 
         @Override
@@ -218,23 +239,49 @@ public class MysqlMultiStageCoprocessor extends AbstractMultiStageCoprocessor<My
         public void onEvent(MessageEvent event) throws Exception {
             try {
                 if (event.isNeedDmlParse()) {
-                    int eventType = event.getEvent().getHeader().getType();
-                    CanalEntry.Entry entry = null;
-                    switch (eventType) {
-                        case LogEvent.ROWS_QUERY_LOG_EVENT:
-                            entry = logEventConvert.parse(event.getEvent(), false);
-                            break;
-                        default:
-                            // 单独解析dml事件
-                            entry = logEventConvert.parseRowsEvent((RowsLogEvent) event.getEvent(), event.getTable());
+                    if (event.isNeedIterate()) {
+                        // compress binlog
+                        List<CanalEntry.Entry> entrys = Lists.newArrayList();
+                        for (int index = 0; index < event.getIterateEvents().size(); index++) {
+                            CanalEntry.Entry entry = processEvent(event.getIterateEvents().get(index),
+                                event.getIterateTables().get(index));
+                            if (entry != null) {
+                                entrys.add(entry);
+                            }
+                        }
+                        event.setIterateEntrys(entrys);
+                    } else {
+                        CanalEntry.Entry entry = processEvent(event.getEvent(), event.getTable());
+                        event.setEntry(entry);
                     }
-
-                    event.setEntry(entry);
                 }
             } catch (Throwable e) {
                 exception = new CanalParseException(e);
                 throw exception;
             }
+        }
+
+        private CanalEntry.Entry processEvent(LogEvent logEvent, TableMeta table) {
+            int eventType = logEvent.getHeader().getType();
+            CanalEntry.Entry entry = null;
+            switch (eventType) {
+                case LogEvent.WRITE_ROWS_EVENT_V1:
+                case LogEvent.WRITE_ROWS_EVENT:
+                case LogEvent.UPDATE_ROWS_EVENT_V1:
+                case LogEvent.PARTIAL_UPDATE_ROWS_EVENT:
+                case LogEvent.UPDATE_ROWS_EVENT:
+                case LogEvent.DELETE_ROWS_EVENT_V1:
+                case LogEvent.DELETE_ROWS_EVENT:
+                    // 单独解析dml事件
+                    entry = logEventConvert.parseRowsEvent((RowsLogEvent) logEvent, table);
+                    break;
+                default:
+                    // 如果出现compress binlog,会出现其他的event type类型
+                    entry = logEventConvert.parse(logEvent, false);
+                    break;
+            }
+
+            return entry;
         }
 
         @Override
@@ -253,8 +300,15 @@ public class MysqlMultiStageCoprocessor extends AbstractMultiStageCoprocessor<My
         @Override
         public void onEvent(MessageEvent event, long sequence, boolean endOfBatch) throws Exception {
             try {
-                if (event.getEntry() != null) {
-                    transactionBuffer.add(event.getEntry());
+                if (event.isNeedIterate()) {
+                    // compress binlog
+                    for (CanalEntry.Entry entry : event.getIterateEntrys()) {
+                        transactionBuffer.add(entry);
+                    }
+                } else {
+                    if (event.getEntry() != null) {
+                        transactionBuffer.add(event.getEntry());
+                    }
                 }
 
                 LogEvent logEvent = event.getEvent();
@@ -269,7 +323,12 @@ public class MysqlMultiStageCoprocessor extends AbstractMultiStageCoprocessor<My
                 event.setEvent(null);
                 event.setTable(null);
                 event.setEntry(null);
+                // clear compress binlog events
                 event.setNeedDmlParse(false);
+                event.setNeedIterate(false);
+                event.setIterateEntrys(null);
+                event.setIterateTables(null);
+                event.setIterateEvents(null);
             } catch (Throwable e) {
                 exception = new CanalParseException(e);
                 throw exception;
@@ -294,6 +353,11 @@ public class MysqlMultiStageCoprocessor extends AbstractMultiStageCoprocessor<My
         private boolean          needDmlParse = false;
         private TableMeta        table;
         private LogEvent         event;
+        private boolean                needIterate  = false;
+        // compress binlog
+        private List<LogEvent>         iterateEvents;
+        private List<TableMeta>        iterateTables;
+        private List<CanalEntry.Entry> iterateEntrys;
 
         public LogBuffer getBuffer() {
             return buffer;
@@ -335,6 +399,37 @@ public class MysqlMultiStageCoprocessor extends AbstractMultiStageCoprocessor<My
             this.table = table;
         }
 
+        public boolean isNeedIterate() {
+            return needIterate;
+        }
+
+        public void setNeedIterate(boolean needIterate) {
+            this.needIterate = needIterate;
+        }
+
+        public List<LogEvent> getIterateEvents() {
+            return iterateEvents;
+        }
+
+        public List<TableMeta> getIterateTables() {
+            return iterateTables;
+        }
+
+        public void setIterateEvents(List<LogEvent> iterateEvents) {
+            this.iterateEvents = iterateEvents;
+        }
+
+        public void setIterateTables(List<TableMeta> iterateTables) {
+            this.iterateTables = iterateTables;
+        }
+
+        public List<CanalEntry.Entry> getIterateEntrys() {
+            return iterateEntrys;
+        }
+
+        public void setIterateEntrys(List<CanalEntry.Entry> iterateEntrys) {
+            this.iterateEntrys = iterateEntrys;
+        }
     }
 
     static class MessageEventFactory implements EventFactory<MessageEvent> {

@@ -1,18 +1,5 @@
 package com.alibaba.otter.canal.deployer;
 
-import java.util.Map;
-import java.util.Properties;
-
-import org.I0Itec.zkclient.IZkStateListener;
-import org.I0Itec.zkclient.exception.ZkNoNodeException;
-import org.I0Itec.zkclient.exception.ZkNodeExistsException;
-import org.apache.commons.lang.BooleanUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.zookeeper.Watcher.Event.KeeperState;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
-
 import com.alibaba.otter.canal.common.utils.AddressUtils;
 import com.alibaba.otter.canal.common.zookeeper.ZkClientx;
 import com.alibaba.otter.canal.common.zookeeper.ZookeeperPathUtils;
@@ -36,6 +23,26 @@ import com.alibaba.otter.canal.server.netty.CanalServerWithNetty;
 import com.google.common.base.Function;
 import com.google.common.collect.MapMaker;
 import com.google.common.collect.MigrateMap;
+import org.I0Itec.zkclient.IZkStateListener;
+import org.I0Itec.zkclient.exception.ZkNoNodeException;
+import org.I0Itec.zkclient.exception.ZkNodeExistsException;
+import org.apache.commons.lang.BooleanUtils;
+import org.apache.commons.lang.StringUtils;
+import org.apache.zookeeper.Watcher.Event.KeeperState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+import static com.alibaba.otter.canal.deployer.CanalConstants.CANAL_DESTINATIONS;
+import static com.alibaba.otter.canal.deployer.CanalConstants.CANAL_DESTINATIONS_EXPR;
 
 /**
  * canal调度控制器
@@ -58,7 +65,7 @@ public class CanalController {
     private boolean                                  autoScan = true;
     private InstanceAction                           defaultAction;
     private Map<InstanceMode, InstanceConfigMonitor> instanceConfigMonitors;
-    private CanalServerWithEmbedded                  embededCanalServer;
+    private CanalServerWithEmbedded                  embeddedCanalServer;
     private CanalServerWithNetty                     canalServer;
 
     private CanalInstanceGenerator                   instanceGenerator;
@@ -102,15 +109,15 @@ public class CanalController {
         registerIp = getProperty(properties, CanalConstants.CANAL_REGISTER_IP);
         port = Integer.valueOf(getProperty(properties, CanalConstants.CANAL_PORT, "11111"));
         adminPort = Integer.valueOf(getProperty(properties, CanalConstants.CANAL_ADMIN_PORT, "11110"));
-        embededCanalServer = CanalServerWithEmbedded.instance();
-        embededCanalServer.setCanalInstanceGenerator(instanceGenerator);// 设置自定义的instanceGenerator
+        embeddedCanalServer = CanalServerWithEmbedded.instance();
+        embeddedCanalServer.setCanalInstanceGenerator(instanceGenerator);// 设置自定义的instanceGenerator
         int metricsPort = Integer.valueOf(getProperty(properties, CanalConstants.CANAL_METRICS_PULL_PORT, "11112"));
-        embededCanalServer.setMetricsPort(metricsPort);
+        embeddedCanalServer.setMetricsPort(metricsPort);
 
         this.adminUser = getProperty(properties, CanalConstants.CANAL_ADMIN_USER);
         this.adminPasswd = getProperty(properties, CanalConstants.CANAL_ADMIN_PASSWD);
-        embededCanalServer.setUser(getProperty(properties, CanalConstants.CANAL_USER));
-        embededCanalServer.setPasswd(getProperty(properties, CanalConstants.CANAL_PASSWD));
+        embeddedCanalServer.setUser(getProperty(properties, CanalConstants.CANAL_USER));
+        embeddedCanalServer.setPasswd(getProperty(properties, CanalConstants.CANAL_PASSWD));
 
         String canalWithoutNetty = getProperty(properties, CanalConstants.CANAL_WITHOUT_NETTY);
         if (canalWithoutNetty == null || "false".equals(canalWithoutNetty)) {
@@ -149,7 +156,7 @@ public class CanalController {
                 public void processActiveEnter() {
                     try {
                         MDC.put(CanalConstants.MDC_DESTINATION, String.valueOf(destination));
-                        embededCanalServer.start(destination);
+                        embeddedCanalServer.start(destination);
                         if (canalMQStarter != null) {
                             canalMQStarter.startDestination(destination);
                         }
@@ -164,7 +171,7 @@ public class CanalController {
                         if (canalMQStarter != null) {
                             canalMQStarter.stopDestination(destination);
                         }
-                        embededCanalServer.stop(destination);
+                        embeddedCanalServer.stop(destination);
                     } finally {
                         MDC.remove(CanalConstants.MDC_DESTINATION);
                     }
@@ -232,7 +239,7 @@ public class CanalController {
                         instanceConfigs.put(destination, config);
                     }
 
-                    if (!embededCanalServer.isStart(destination)) {
+                    if (!embeddedCanalServer.isStart(destination)) {
                         // HA机制启动
                         ServerRunningMonitor runningMonitor = ServerRunningMonitors.getRunningMonitor(destination);
                         if (!config.getLazy() && !runningMonitor.isStart()) {
@@ -247,7 +254,7 @@ public class CanalController {
                     // 此处的stop，代表强制退出，非HA机制，所以需要退出HA的monitor和配置信息
                     InstanceConfig config = instanceConfigs.remove(destination);
                     if (config != null) {
-                        embededCanalServer.stop(destination);
+                        embeddedCanalServer.stop(destination);
                         ServerRunningMonitor runningMonitor = ServerRunningMonitors.getRunningMonitor(destination);
                         if (runningMonitor.isStart()) {
                             runningMonitor.stop();
@@ -377,7 +384,7 @@ public class CanalController {
                 instanceGenerator.setSpringXml(config.getSpringXml());
                 return instanceGenerator.generate(destination);
             } else {
-                throw new UnsupportedOperationException("unknow mode :" + config.getMode());
+                throw new UnsupportedOperationException("unknown mode :" + config.getMode());
             }
 
         };
@@ -390,7 +397,7 @@ public class CanalController {
     }
 
     private void initInstanceConfig(Properties properties) {
-        String destinationStr = getProperty(properties, CanalConstants.CANAL_DESTINATIONS);
+        String destinationStr = getDestinations(properties);
         String[] destinations = StringUtils.split(destinationStr, CanalConstants.CANAL_DESTINATION_SPLIT);
 
         for (String destination : destinations) {
@@ -461,6 +468,40 @@ public class CanalController {
         return StringUtils.trim(value);
     }
 
+    public static String getDestinations(Properties properties) {
+        String expr = getProperty(properties, CANAL_DESTINATIONS_EXPR);
+        if (StringUtils.isNotBlank(expr)) {
+            return parseExpr(expr);
+        } else {
+            return getProperty(properties, CANAL_DESTINATIONS);
+        }
+    }
+
+    private static String parseExpr(String expr) {
+        String prefix = StringUtils.substringBefore(expr, "{");
+        String range = StringUtils.substringAfter(expr, "{");
+        range = StringUtils.substringBefore(range, "}");
+
+        String regex = "(\\d+)-(\\d+)";
+        Pattern pattern = Pattern.compile(regex);
+        Matcher matcher = pattern.matcher(range);
+        if (matcher.find()) {
+            String head = matcher.group(1);
+            String tail = matcher.group(2);
+            int start = Integer.parseInt(head);
+            int end = Integer.parseInt(tail);
+
+            List<String> list = new ArrayList<>();
+            for (int i = start; i <= end; i++) {
+                String d = prefix + i;
+                list.add(d);
+            }
+            return list.stream().map(Object::toString).collect(Collectors.joining(","));
+        } else {
+            throw new CanalServerException("invalid destinations expr " + expr);
+        }
+    }
+
     public void start() throws Throwable {
         logger.info("## start the canal server[{}({}):{}]", ip, registerIp, port);
         // 创建整个canal的工作节点
@@ -483,14 +524,14 @@ public class CanalController {
                 }
             });
         }
-        // 优先启动embeded服务
-        embededCanalServer.start();
+        // 优先启动embedded服务
+        embeddedCanalServer.start();
         // 尝试启动一下非lazy状态的通道
         for (Map.Entry<String, InstanceConfig> entry : instanceConfigs.entrySet()) {
             final String destination = entry.getKey();
             InstanceConfig config = entry.getValue();
             // 创建destination的工作节点
-            if (!embededCanalServer.isStart(destination)) {
+            if (!embeddedCanalServer.isStart(destination)) {
                 // HA机制启动
                 ServerRunningMonitor runningMonitor = ServerRunningMonitors.getRunningMonitor(destination);
                 if (!config.getLazy() && !runningMonitor.isStart()) {
@@ -558,6 +599,11 @@ public class CanalController {
         }
 
         ZkClientx.clearClients();
+
+        // 需要释放 CanalServerWithEmbedded 否则主线程退出后，进程无法自动完整退出...
+        if (embeddedCanalServer != null) {
+            embeddedCanalServer.stop();
+        }
     }
 
     private void initCid(String path) {

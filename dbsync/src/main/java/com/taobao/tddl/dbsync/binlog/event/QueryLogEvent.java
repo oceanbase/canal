@@ -433,14 +433,18 @@ public class QueryLogEvent extends LogEvent {
     private int             serverCollation           = -1;
     private int             tvSec                     = -1;
     private BigInteger      ddlXid                    = BigInteger.valueOf(-1L);
-    private String          charsetName;
+    private Charset         charset;
 
     private String          timezone;
 
     public QueryLogEvent(LogHeader header, LogBuffer buffer, FormatDescriptionLogEvent descriptionEvent)
-                                                                                                        throws IOException{
-        super(header);
+                                                                                                         throws IOException{
+        this(header, buffer, descriptionEvent, false);
+    }
 
+    public QueryLogEvent(LogHeader header, LogBuffer buffer, FormatDescriptionLogEvent descriptionEvent,
+                         boolean compress) throws IOException{
+        super(header);
         final int commonHeaderLen = descriptionEvent.commonHeaderLen;
         final int postHeaderLen = descriptionEvent.postHeaderLen[header.type - 1];
         /*
@@ -495,15 +499,20 @@ public class QueryLogEvent extends LogEvent {
         unpackVariables(buffer, end);
         buffer.position(end);
         buffer.limit(limit);
-
         /* A 2nd variable part; this is common to all versions */
-        final int queryLen = dataLen - dbLen - 1;
-        dbname = buffer.getFixString(dbLen + 1);
+        dbname = buffer.getFixName(dbLen + 1);
+        int queryLen = dataLen - dbLen - 1;
+        if (compress) {
+            // mariadb compress log event
+            // see https://github.com/alibaba/canal/issues/4388
+            buffer = buffer.uncompressBuf();
+            queryLen = buffer.limit();
+        }
         if (clientCharset >= 0) {
-            charsetName = CharsetConversion.getJavaCharset(clientCharset);
+            charset = CharsetConversion.getNioCharset(clientCharset);
 
-            if ((charsetName != null) && (Charset.isSupported(charsetName))) {
-                query = buffer.getFixString(queryLen, charsetName);
+            if (charset != null) {
+                query = buffer.getFixString(queryLen, charset);
             } else {
                 logger.warn("unsupported character set in query log: " + "\n    ID = " + clientCharset + ", Charset = "
                             + CharsetConversion.getCharset(clientCharset) + ", Collation = "
@@ -603,6 +612,13 @@ public class QueryLogEvent extends LogEvent {
      */
     public static final int Q_HRNOW                           = 128;
 
+    /**
+     * Support MariaDB 10.10.1
+     */
+    public static final int Q_XID                             = 129;
+
+    public static final int Q_GTID_FLAGS3                     = 130;
+
     private final void unpackVariables(LogBuffer buffer, final int end) throws IOException {
         int code = -1;
         try {
@@ -613,10 +629,10 @@ public class QueryLogEvent extends LogEvent {
                         break;
                     case Q_SQL_MODE_CODE:
                         sql_mode = buffer.getLong64(); // QQ: Fix when sql_mode
-                                                       // is ulonglong
+                        // is ulonglong
                         break;
                     case Q_CATALOG_NZ_CODE:
-                        catalog = buffer.getString();
+                        catalog = buffer.getName();
                         break;
                     case Q_AUTO_INCREMENT:
                         autoIncrementIncrement = buffer.getUint16();
@@ -632,7 +648,7 @@ public class QueryLogEvent extends LogEvent {
                         serverCollation = buffer.getUint16();
                         break;
                     case Q_TIME_ZONE_CODE:
-                        timezone = buffer.getString();
+                        timezone = buffer.getName();
                         break;
                     case Q_CATALOG_CODE: /* for 5.0.x where 0<=x<=3 masters */
                         final int len = buffer.getUint8();
@@ -656,8 +672,8 @@ public class QueryLogEvent extends LogEvent {
                         buffer.forward(4);
                         break;
                     case Q_INVOKER:
-                        user = buffer.getString();
-                        host = buffer.getString();
+                        user = buffer.getName();
+                        host = buffer.getName();
                         break;
                     case Q_MICROSECONDS:
                         // when.tv_usec= uint3korr(pos);
@@ -678,7 +694,7 @@ public class QueryLogEvent extends LogEvent {
                         String mtsAccessedDbNames[] = new String[mtsAccessedDbs];
                         for (int i = 0; i < mtsAccessedDbs && buffer.position() < end; i++) {
                             int length = end - buffer.position();
-                            mtsAccessedDbNames[i] = buffer.getFixString(length < NAME_LEN ? length : NAME_LEN);
+                            mtsAccessedDbNames[i] = buffer.getFixName(length < NAME_LEN ? length : NAME_LEN);
                         }
                         break;
                     case Q_EXPLICIT_DEFAULTS_FOR_TIMESTAMP:
@@ -700,6 +716,25 @@ public class QueryLogEvent extends LogEvent {
                     case Q_HRNOW:
                         // int when_sec_part = buffer.getUint24();
                         buffer.forward(3);
+                        break;
+                    case Q_XID:
+                        // xid= uint8korr(pos);
+                        buffer.forward(8);
+                        break;
+                    case Q_GTID_FLAGS3:
+                        // gtid_flags_extra= *pos++;
+                        // if (gtid_flags_extra & (Gtid_log_event::FL_COMMIT_ALTER_E1 |
+                        // Gtid_log_event::FL_ROLLBACK_ALTER_E1)) {
+                        // sa_seq_no = uint8korr(pos);
+                        // pos+= 8;
+                        // }
+
+                        int gtid_flags_extra = buffer.getUint8();
+                        final int FL_COMMIT_ALTER_E1= 4;
+                        final int FL_ROLLBACK_ALTER_E1= 8;
+                        if ((gtid_flags_extra & (FL_COMMIT_ALTER_E1 | FL_ROLLBACK_ALTER_E1))> 0) {
+                            buffer.forward(8);
+                        }
                         break;
                     default:
                         /*
@@ -740,16 +775,22 @@ public class QueryLogEvent extends LogEvent {
                 return "Q_TABLE_MAP_FOR_UPDATE_CODE";
             case Q_MASTER_DATA_WRITTEN_CODE:
                 return "Q_MASTER_DATA_WRITTEN_CODE";
-            case Q_UPDATED_DB_NAMES:
-                return "Q_UPDATED_DB_NAMES";
+            case Q_INVOKER:
+                return "case Q_INVOKER";
             case Q_MICROSECONDS:
                 return "Q_MICROSECONDS";
+            case Q_UPDATED_DB_NAMES:
+                return "Q_UPDATED_DB_NAMES";
+            case Q_EXPLICIT_DEFAULTS_FOR_TIMESTAMP:
+                return "Q_EXPLICIT_DEFAULTS_FOR_TIMESTAMP";
             case Q_DDL_LOGGED_WITH_XID:
                 return "Q_DDL_LOGGED_WITH_XID";
             case Q_DEFAULT_COLLATION_FOR_UTF8MB4:
                 return "Q_DEFAULT_COLLATION_FOR_UTF8MB4";
             case Q_SQL_REQUIRE_PRIMARY_KEY:
                 return "Q_SQL_REQUIRE_PRIMARY_KEY";
+            case Q_HRNOW:
+                return "Q_HRNOW";
         }
         return "CODE#" + code;
     }
@@ -797,8 +838,8 @@ public class QueryLogEvent extends LogEvent {
         return autoIncrementOffset;
     }
 
-    public final String getCharsetName() {
-        return charsetName;
+    public final Charset getCharset() {
+        return charset;
     }
 
     public final String getTimezone() {

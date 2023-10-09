@@ -1,5 +1,7 @@
 package com.alibaba.otter.canal.parse.inbound;
 
+import static com.alibaba.otter.canal.parse.driver.mysql.utils.GtidUtil.parseGtidSet;
+
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;

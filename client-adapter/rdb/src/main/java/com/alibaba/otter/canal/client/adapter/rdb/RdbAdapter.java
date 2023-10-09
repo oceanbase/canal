@@ -26,11 +26,7 @@ import com.alibaba.otter.canal.client.adapter.rdb.service.RdbEtlService;
 import com.alibaba.otter.canal.client.adapter.rdb.service.RdbMirrorDbSyncService;
 import com.alibaba.otter.canal.client.adapter.rdb.service.RdbSyncService;
 import com.alibaba.otter.canal.client.adapter.rdb.support.SyncUtil;
-import com.alibaba.otter.canal.client.adapter.support.Dml;
-import com.alibaba.otter.canal.client.adapter.support.EtlResult;
-import com.alibaba.otter.canal.client.adapter.support.OuterAdapterConfig;
-import com.alibaba.otter.canal.client.adapter.support.SPI;
-import com.alibaba.otter.canal.client.adapter.support.Util;
+import com.alibaba.otter.canal.client.adapter.support.*;
 
 /**
  * RDB适配器实现类
@@ -56,6 +52,8 @@ public class RdbAdapter implements OuterAdapter {
 
     private Properties                              envProperties;
 
+    private OuterAdapterConfig                      configuration;
+
     public Map<String, MappingConfig> getRdbMapping() {
         return rdbMapping;
     }
@@ -76,47 +74,20 @@ public class RdbAdapter implements OuterAdapter {
     @Override
     public void init(OuterAdapterConfig configuration, Properties envProperties) {
         this.envProperties = envProperties;
-
+        this.configuration = configuration;
+      
         // 从jdbc url获取db类型
         Map<String, String> properties = configuration.getProperties();
         String dbType = JdbcUtils.getDbType(properties.get("jdbc.url"), null);
-
+        // 当.yml文件编码格式存在问题，此处rdb yml文件构建 可能会抛出异常
         Map<String, MappingConfig> rdbMappingTmp = ConfigLoader.load(envProperties);
         // 过滤不匹配的key的配置
-        rdbMappingTmp.forEach((key, mappingConfig) -> {
-            if ((mappingConfig.getOuterAdapterKey() == null && configuration.getKey() == null)
-                || (mappingConfig.getOuterAdapterKey() != null && mappingConfig.getOuterAdapterKey()
-                    .equalsIgnoreCase(configuration.getKey()))) {
-                rdbMapping.put(key, mappingConfig);
-            }
+        rdbMappingTmp.forEach((key, config) -> {
+            addConfig(key, config);
         });
 
         if (rdbMapping.isEmpty()) {
             throw new RuntimeException("No rdb adapter found for config key: " + configuration.getKey());
-        }
-
-        for (Map.Entry<String, MappingConfig> entry : rdbMapping.entrySet()) {
-            String configName = entry.getKey();
-            MappingConfig mappingConfig = entry.getValue();
-            if (!mappingConfig.getDbMapping().getMirrorDb()) {
-                String key;
-                if (envProperties != null && !"tcp".equalsIgnoreCase(envProperties.getProperty("canal.conf.mode"))) {
-                    key = StringUtils.trimToEmpty(mappingConfig.getDestination()) + "-"
-                          + StringUtils.trimToEmpty(mappingConfig.getGroupId()) + "_"
-                          + mappingConfig.getDbMapping().getDatabase() + "-" + mappingConfig.getDbMapping().getTable();
-                } else {
-                    key = StringUtils.trimToEmpty(mappingConfig.getDestination()) + "_"
-                          + mappingConfig.getDbMapping().getDatabase() + "-" + mappingConfig.getDbMapping().getTable();
-                }
-                Map<String, MappingConfig> configMap = mappingConfigCache.computeIfAbsent(key,
-                    k1 -> new ConcurrentHashMap<>());
-                configMap.put(configName, mappingConfig);
-            } else {
-                // mirrorDB
-                String key = StringUtils.trimToEmpty(mappingConfig.getDestination()) + "."
-                             + mappingConfig.getDbMapping().getDatabase();
-                mirrorDbConfigCache.put(key, MirrorDbConfig.create(configName, mappingConfig));
-            }
         }
 
         // 初始化连接池
@@ -182,7 +153,9 @@ public class RdbAdapter implements OuterAdapter {
             return;
         }
         try {
-            rdbSyncService.sync(mappingConfigCache, dmls, envProperties);
+            if (!mappingConfigCache.isEmpty()) {
+                rdbSyncService.sync(mappingConfigCache, dmls, envProperties);
+            }
             rdbMirrorDbSyncService.sync(dmls);
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -305,5 +278,68 @@ public class RdbAdapter implements OuterAdapter {
         if (dataSource != null) {
             dataSource.close();
         }
+    }
+
+    private void addSyncConfigToCache(String configName, MappingConfig mappingConfig) {
+        if (!mappingConfig.getDbMapping().getMirrorDb()) {
+            String key;
+            if (envProperties != null && !"tcp".equalsIgnoreCase(envProperties.getProperty("canal.conf.mode"))) {
+                key = StringUtils.trimToEmpty(mappingConfig.getDestination()) + "-"
+                        + StringUtils.trimToEmpty(mappingConfig.getGroupId()) + "_"
+                        + mappingConfig.getDbMapping().getDatabase() + "-" + mappingConfig.getDbMapping().getTable();
+            } else {
+                key = StringUtils.trimToEmpty(mappingConfig.getDestination()) + "_"
+                        + mappingConfig.getDbMapping().getDatabase() + "-" + mappingConfig.getDbMapping().getTable();
+            }
+            Map<String, MappingConfig> configMap = mappingConfigCache.computeIfAbsent(key,
+                    k1 -> new ConcurrentHashMap<>());
+            configMap.put(configName, mappingConfig);
+        } else {
+            // mirrorDB
+            String key = StringUtils.trimToEmpty(mappingConfig.getDestination()) + "."
+                    + mappingConfig.getDbMapping().getDatabase();
+            mirrorDbConfigCache.put(key, MirrorDbConfig.create(configName, mappingConfig));
+        }
+    }
+
+    public boolean addConfig(String fileName, MappingConfig config) {
+        if (match(config)) {
+            rdbMapping.put(fileName, config);
+            addSyncConfigToCache(fileName, config);
+            FileName2KeyMapping.register(getClass().getAnnotation(SPI.class).value(), fileName,
+                    configuration.getKey());
+            return true;
+        }
+        return false;
+    }
+
+    public void updateConfig(String fileName, MappingConfig config) {
+        if (config.getOuterAdapterKey() != null && !config.getOuterAdapterKey()
+                .equals(configuration.getKey())) {
+            // 理论上不允许改这个 因为本身就是通过这个关联起Adapter和Config的
+            throw new RuntimeException("not allow to change outAdapterKey");
+        }
+        rdbMapping.put(fileName, config);
+        addSyncConfigToCache(fileName, config);
+    }
+
+    public void deleteConfig(String fileName) {
+        rdbMapping.remove(fileName);
+        for (Map<String, MappingConfig> configMap : mappingConfigCache.values()) {
+            if (configMap != null) {
+                configMap.remove(fileName);
+            }
+        }
+        FileName2KeyMapping.unregister(getClass().getAnnotation(SPI.class).value(), fileName);
+    }
+
+    private boolean match(MappingConfig config) {
+        boolean sameMatch = config.getOuterAdapterKey() != null && config.getOuterAdapterKey()
+                .equalsIgnoreCase(configuration.getKey());
+        boolean prefixMatch = config.getOuterAdapterKey() == null && configuration.getKey()
+                .startsWith(StringUtils
+                        .join(new String[]{Util.AUTO_GENERATED_PREFIX, config.getDestination(),
+                                config.getGroupId()}, '-'));
+        return sameMatch || prefixMatch;
     }
 }

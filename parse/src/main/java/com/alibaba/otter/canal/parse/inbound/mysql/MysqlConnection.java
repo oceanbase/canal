@@ -217,8 +217,18 @@ public class MysqlConnection implements ErosaConnection {
                     throw new CanalParseException("parse failed");
                 }
 
-                if (!func.sink(event)) {
-                    break;
+                List<LogEvent> iterateEvents = decoder.processIterateDecode(event, context);
+                if (!iterateEvents.isEmpty()) {
+                    // 处理compress event
+                    for(LogEvent itEvent : iterateEvents) {
+                        if (!func.sink(event)) {
+                            break;
+                        }
+                    }
+                } else {
+                    if (!func.sink(event)) {
+                        break;
+                    }
                 }
             }
         }
@@ -344,9 +354,9 @@ public class MysqlConnection implements ErosaConnection {
     private void sendBinlogDumpGTID(GTIDSet gtidSet) throws IOException {
         if (isMariaDB()) {
             sendMariaBinlogDumpGTID(gtidSet);
-            return;
+        } else {
+            sendMySQLBinlogDumpGTID(gtidSet);
         }
-        sendMySQLBinlogDumpGTID(gtidSet);
     }
 
     private void sendMySQLBinlogDumpGTID(GTIDSet gtidSet) throws IOException {

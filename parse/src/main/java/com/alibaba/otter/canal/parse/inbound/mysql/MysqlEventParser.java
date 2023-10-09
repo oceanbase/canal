@@ -73,6 +73,9 @@ public class MysqlEventParser extends AbstractMysqlEventParser implements CanalE
     private boolean              autoResetLatestPosMode            = false;    // true:
                                                                                 // binlog被删除之后，自动按最新的数据订阅
 
+
+    private boolean multiStreamEnable;//support for polardbx binlog-x
+
     @Override
     protected ErosaConnection buildErosaConnection() {
         return buildMysqlConnection(this.runningInfo);
@@ -353,7 +356,7 @@ public class MysqlEventParser extends AbstractMysqlEventParser implements CanalE
     @Override
     protected EntryPosition findStartPosition(ErosaConnection connection) throws IOException {
         if (isGTIDMode()) {
-            // GTID模式下，CanalLogPositionManager里取最后的gtid，没有则取instanc配置中的
+            // GTID模式下，CanalLogPositionManager里取最后的gtid，没有则取instance配置中的
             LogPosition logPosition = getLogPositionManager().getLatestIndexBy(destination);
             if (logPosition != null) {
                 // 如果以前是非GTID模式，后来调整为了GTID模式，那么为了保持兼容，需要判断gtid是否为空
@@ -391,7 +394,7 @@ public class MysqlEventParser extends AbstractMysqlEventParser implements CanalE
     protected EntryPosition findEndPositionWithMasterIdAndTimestamp(MysqlConnection connection) {
         MysqlConnection mysqlConnection = (MysqlConnection) connection;
         final EntryPosition endPosition = findEndPosition(mysqlConnection);
-        if (tableMetaTSDB != null) {
+        if (tableMetaTSDB != null || isGTIDMode()) {
             long startTimestamp = System.currentTimeMillis();
             return findAsPerTimestampInSpecificLogFile(mysqlConnection,
                 startTimestamp,
@@ -436,7 +439,8 @@ public class MysqlEventParser extends AbstractMysqlEventParser implements CanalE
             }
 
             if (entryPosition == null) {
-                entryPosition = findEndPositionWithMasterIdAndTimestamp(mysqlConnection); // 默认从当前最后一个位置进行消费
+                entryPosition =
+                        findEndPositionWithMasterIdAndTimestamp(mysqlConnection); // 默认从当前最后一个位置进行消费
             }
 
             // 判断一下是否需要按时间订阅
@@ -679,10 +683,12 @@ public class MysqlEventParser extends AbstractMysqlEventParser implements CanalE
      */
     private EntryPosition findEndPosition(MysqlConnection mysqlConnection) {
         try {
-            ResultSetPacket packet = mysqlConnection.query("show master status");
+            String showSql = multiStreamEnable ? "show master status with " + destination : "show master status";
+            ResultSetPacket packet = mysqlConnection.query(showSql);
             List<String> fields = packet.getFieldValues();
             if (CollectionUtils.isEmpty(fields)) {
-                throw new CanalParseException("command : 'show master status' has an error! pls check. you need (at least one of) the SUPER,REPLICATION CLIENT privilege(s) for this operation");
+                throw new CanalParseException(
+                        "command : 'show master status' has an error! pls check. you need (at least one of) the SUPER,REPLICATION CLIENT privilege(s) for this operation");
             }
             EntryPosition endPosition = new EntryPosition(fields.get(0), Long.valueOf(fields.get(1)));
             if (isGTIDMode() && fields.size() > 4) {
@@ -707,10 +713,13 @@ public class MysqlEventParser extends AbstractMysqlEventParser implements CanalE
      */
     private EntryPosition findStartPosition(MysqlConnection mysqlConnection) {
         try {
-            ResultSetPacket packet = mysqlConnection.query("show binlog events limit 1");
+            String showSql = multiStreamEnable ?
+                    "show binlog events with " + destination + " limit 1" : "show binlog events limit 1";
+            ResultSetPacket packet = mysqlConnection.query(showSql);
             List<String> fields = packet.getFieldValues();
             if (CollectionUtils.isEmpty(fields)) {
-                throw new CanalParseException("command : 'show binlog events limit 1' has an error! pls check. you need (at least one of) the SUPER,REPLICATION CLIENT privilege(s) for this operation");
+                throw new CanalParseException(
+                        "command : 'show binlog events limit 1' has an error! pls check. you need (at least one of) the SUPER,REPLICATION CLIENT privilege(s) for this operation");
             }
             EntryPosition endPosition = new EntryPosition(fields.get(0), Long.valueOf(fields.get(1)));
             return endPosition;
@@ -967,5 +976,9 @@ public class MysqlEventParser extends AbstractMysqlEventParser implements CanalE
 
     public void setAutoResetLatestPosMode(boolean autoResetLatestPosMode) {
         this.autoResetLatestPosMode = autoResetLatestPosMode;
+    }
+
+    public void setMultiStreamEnable(boolean multiStreamEnable) {
+        this.multiStreamEnable = multiStreamEnable;
     }
 }

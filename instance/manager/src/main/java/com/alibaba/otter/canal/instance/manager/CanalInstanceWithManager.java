@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.alibaba.fastjson2.JSONObject;
 import org.apache.commons.lang.BooleanUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
@@ -17,7 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.CollectionUtils;
 
-import com.alibaba.fastjson.JSONObject;
 import com.alibaba.otter.canal.common.CanalException;
 import com.alibaba.otter.canal.common.alarm.CanalAlarmHandler;
 import com.alibaba.otter.canal.common.alarm.LogAlarmHandler;
@@ -27,13 +27,7 @@ import com.alibaba.otter.canal.filter.aviater.AviaterRegexFilter;
 import com.alibaba.otter.canal.instance.core.AbstractCanalInstance;
 import com.alibaba.otter.canal.instance.manager.model.Canal;
 import com.alibaba.otter.canal.instance.manager.model.CanalParameter;
-import com.alibaba.otter.canal.instance.manager.model.CanalParameter.DataSourcing;
-import com.alibaba.otter.canal.instance.manager.model.CanalParameter.HAMode;
-import com.alibaba.otter.canal.instance.manager.model.CanalParameter.IndexMode;
-import com.alibaba.otter.canal.instance.manager.model.CanalParameter.MetaMode;
-import com.alibaba.otter.canal.instance.manager.model.CanalParameter.SourcingType;
-import com.alibaba.otter.canal.instance.manager.model.CanalParameter.StorageMode;
-import com.alibaba.otter.canal.instance.manager.model.CanalParameter.StorageScavengeMode;
+import com.alibaba.otter.canal.instance.manager.model.CanalParameter.*;
 import com.alibaba.otter.canal.meta.FileMixedMetaManager;
 import com.alibaba.otter.canal.meta.MemoryMetaManager;
 import com.alibaba.otter.canal.meta.PeriodMixedMetaManager;
@@ -335,6 +329,7 @@ public class CanalInstanceWithManager extends AbstractCanalInstance {
             mysqlEventParser.setFilterTableError(parameters.getFilterTableError());
             mysqlEventParser.setParallel(parameters.getParallel());
             mysqlEventParser.setIsGTIDMode(BooleanUtils.toBoolean(parameters.getGtidEnable()));
+            mysqlEventParser.setMultiStreamEnable(parameters.getMultiStreamEnable());
             // tsdb
             if (parameters.getTsdbSnapshotInterval() != null) {
                 mysqlEventParser.setTsdbSnapshotInterval(parameters.getTsdbSnapshotInterval());
@@ -343,6 +338,8 @@ public class CanalInstanceWithManager extends AbstractCanalInstance {
                 mysqlEventParser.setTsdbSnapshotExpire(parameters.getTsdbSnapshotExpire());
             }
             boolean tsdbEnable = BooleanUtils.toBoolean(parameters.getTsdbEnable());
+            // manager启动模式默认使用mysql tsdb机制
+            final String tsdbSpringXml = "classpath:spring/tsdb/mysql-tsdb.xml";
             if (tsdbEnable) {
                 mysqlEventParser.setTableMetaTSDBFactory(new DefaultTableMetaTSDBFactory() {
 
@@ -353,19 +350,28 @@ public class CanalInstanceWithManager extends AbstractCanalInstance {
 
                     @Override
                     public TableMetaTSDB build(String destination, String springXml) {
-                        try {
-                            System.setProperty("canal.instance.tsdb.url", parameters.getTsdbJdbcUrl());
-                            System.setProperty("canal.instance.tsdb.dbUsername", parameters.getTsdbJdbcUserName());
-                            System.setProperty("canal.instance.tsdb.dbPassword", parameters.getTsdbJdbcPassword());
+                        synchronized (CanalInstanceWithManager.class) {
+                            try {
+                                System.setProperty("canal.instance.tsdb.url", parameters.getTsdbJdbcUrl());
+                                System.setProperty("canal.instance.tsdb.dbUsername", parameters.getTsdbJdbcUserName());
+                                System.setProperty("canal.instance.tsdb.dbPassword", parameters.getTsdbJdbcPassword());
+                                System.setProperty("canal.instance.destination", destination);
 
-                            return TableMetaTSDBBuilder.build(destination, "classpath:spring/tsdb/mysql-tsdb.xml");
-                        } finally {
-                            System.setProperty("canal.instance.tsdb.url", "");
-                            System.setProperty("canal.instance.tsdb.dbUsername", "");
-                            System.setProperty("canal.instance.tsdb.dbPassword", "");
+                                return TableMetaTSDBBuilder.build(destination, tsdbSpringXml);
+                            } finally {
+                                // reset
+                                System.setProperty("canal.instance.destination", "");
+                                System.setProperty("canal.instance.tsdb.url", "");
+                                System.setProperty("canal.instance.tsdb.dbUsername", "");
+                                System.setProperty("canal.instance.tsdb.dbPassword", "");
+                            }
                         }
                     }
                 });
+                mysqlEventParser.setTsdbJdbcUrl(parameters.getTsdbJdbcUrl());
+                mysqlEventParser.setTsdbJdbcUserName(parameters.getTsdbJdbcUserName());
+                mysqlEventParser.setTsdbJdbcPassword(parameters.getTsdbJdbcPassword());
+                mysqlEventParser.setTsdbSpringXml(tsdbSpringXml);
                 mysqlEventParser.setEnableTsdb(tsdbEnable);
             }
             eventParser = mysqlEventParser;

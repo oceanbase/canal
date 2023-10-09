@@ -38,6 +38,9 @@ public abstract class AbstractMysqlEventParser extends AbstractEventParser<LogEv
 
     protected TableMetaTSDBFactory tableMetaTSDBFactory      = new DefaultTableMetaTSDBFactory();
     protected boolean              enableTsdb                = false;
+    protected String               tsdbJdbcUrl;
+    protected String               tsdbJdbcUserName;
+    protected String               tsdbJdbcPassword;
     protected int                  tsdbSnapshotInterval      = 24;
     protected int                  tsdbSnapshotExpire        = 360;
     protected String               tsdbSpringXml;
@@ -306,14 +309,7 @@ public abstract class AbstractMysqlEventParser extends AbstractEventParser<LogEv
         if (enableTsdb) {
             if (tableMetaTSDB == null) {
                 synchronized (CanalEventParser.class) {
-                    try {
-                        // 设置当前正在加载的通道，加载spring查找文件时会用到该变量
-                        System.setProperty("canal.instance.destination", destination);
-                        // 初始化
-                        tableMetaTSDB = tableMetaTSDBFactory.build(destination, tsdbSpringXml);
-                    } finally {
-                        System.setProperty("canal.instance.destination", "");
-                    }
+                    buildTableMetaTSDB(tsdbSpringXml);
                 }
             }
         }
@@ -329,6 +325,28 @@ public abstract class AbstractMysqlEventParser extends AbstractEventParser<LogEv
         }
         stopHeartBeat();
         super.stop();
+    }
+    protected synchronized void buildTableMetaTSDB(String tsdbSpringXml) {
+        if (tableMetaTSDB != null) {
+            return;
+        }
+
+        try {
+            // 设置当前正在加载的通道，加载spring查找文件时会用到该变量
+            System.setProperty("canal.instance.tsdb.url", tsdbJdbcUrl);
+            System.setProperty("canal.instance.tsdb.dbUsername", tsdbJdbcUserName);
+            System.setProperty("canal.instance.tsdb.dbPassword", tsdbJdbcPassword);
+            // 初始化
+            this.tableMetaTSDB = tableMetaTSDBFactory.build(destination, tsdbSpringXml);
+        } catch (Throwable e) {
+            logger.warn("failed to build TableMetaTSDB ",e);
+            throw new CanalParseException(e);
+        } finally {
+            // reset
+            System.setProperty("canal.instance.tsdb.url", "");
+            System.setProperty("canal.instance.tsdb.dbUsername", "");
+            System.setProperty("canal.instance.tsdb.dbPassword", "");
+        }
     }
 
     @Override
@@ -362,22 +380,10 @@ public abstract class AbstractMysqlEventParser extends AbstractEventParser<LogEv
 
     public void setEnableTsdb(boolean enableTsdb) {
         this.enableTsdb = enableTsdb;
-        if (this.enableTsdb) {
-            if (tableMetaTSDB == null) {
-                // 初始化
-                tableMetaTSDB = tableMetaTSDBFactory.build(destination, tsdbSpringXml);
-            }
-        }
     }
 
     public void setTsdbSpringXml(String tsdbSpringXml) {
         this.tsdbSpringXml = tsdbSpringXml;
-        if (this.enableTsdb) {
-            if (tableMetaTSDB == null) {
-                // 初始化
-                tableMetaTSDB = tableMetaTSDBFactory.build(destination, tsdbSpringXml);
-            }
-        }
     }
 
     public void setTableMetaTSDBFactory(TableMetaTSDBFactory tableMetaTSDBFactory) {
@@ -422,5 +428,17 @@ public abstract class AbstractMysqlEventParser extends AbstractEventParser<LogEv
 
     public void setServerId(long serverId) {
         this.serverId = serverId;
+    }
+
+    public void setTsdbJdbcUrl(String tsdbJdbcUrl) {
+        this.tsdbJdbcUrl = tsdbJdbcUrl;
+    }
+
+    public void setTsdbJdbcUserName(String tsdbJdbcUserName) {
+        this.tsdbJdbcUserName = tsdbJdbcUserName;
+    }
+
+    public void setTsdbJdbcPassword(String tsdbJdbcPassword) {
+        this.tsdbJdbcPassword = tsdbJdbcPassword;
     }
 }
