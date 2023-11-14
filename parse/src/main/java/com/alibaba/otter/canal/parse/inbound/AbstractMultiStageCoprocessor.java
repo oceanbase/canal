@@ -9,12 +9,15 @@ import java.util.concurrent.locks.LockSupport;
 
 import com.alibaba.otter.canal.common.AbstractCanalLifeCycle;
 import com.alibaba.otter.canal.parse.exception.CanalParseException;
+import com.alibaba.otter.canal.parse.inbound.mysql.MysqlMultiStageCoprocessor;
 import com.lmax.disruptor.BatchEventProcessor;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.ExceptionHandler;
 import com.lmax.disruptor.InsufficientCapacityException;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.WorkerPool;
+import com.taobao.tddl.dbsync.binlog.LogBuffer;
+import com.taobao.tddl.dbsync.binlog.LogEvent;
 
 /**
  * 多阶段并发处理器接口的抽象实现类

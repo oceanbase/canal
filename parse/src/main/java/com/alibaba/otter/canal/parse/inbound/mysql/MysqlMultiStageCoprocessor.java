@@ -133,6 +133,10 @@ public class MysqlMultiStageCoprocessor extends AbstractMultiStageCoprocessor<My
         }
     }
 
+    public void setCompatiablePercona(boolean compatiablePercona) {
+        logContext.setCompatiablePercona(compatiablePercona);
+    }
+
     private class SimpleParserStage implements EventHandler<MessageEvent>, LifecycleAware {
 
         private LogDecoder decoder;

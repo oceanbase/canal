@@ -7,6 +7,9 @@ import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.lang.StringUtils;
+import java.nio.charset.Charset;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.alibaba.otter.canal.filter.CanalEventFilter;
 import com.alibaba.otter.canal.filter.aviater.AviaterRegexFilter;
@@ -343,9 +346,10 @@ public abstract class AbstractMysqlEventParser extends AbstractEventParser<LogEv
             throw new CanalParseException(e);
         } finally {
             // reset
-            System.setProperty("canal.instance.tsdb.url", "");
-            System.setProperty("canal.instance.tsdb.dbUsername", "");
-            System.setProperty("canal.instance.tsdb.dbPassword", "");
+            Properties props = System.getProperties();
+            props.remove("canal.instance.tsdb.url");
+            props.remove("canal.instance.tsdb.dbUsername");
+            props.remove("canal.instance.tsdb.dbPassword");
         }
     }
 
