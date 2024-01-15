@@ -433,7 +433,6 @@ public class CanalInstanceWithManager extends AbstractCanalInstance {
             logProxyEventParser.setProfilingEnabled(false);
             logProxyEventParser.setParallel(parameters.getParallel());
             logProxyEventParser.setSslConfig(new LogProxyConnection.SslConfig(false, null, null, null));
-            logProxyEventParser.setExcludeTenantInDbName(true);
             logProxyEventParser.setTenant(tenant);
             eventParser = logProxyEventParser;
         } else if (type.isOracle()) {

@@ -97,16 +97,10 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
     private boolean    filterDmlUpdate = false;
     private boolean    filterDmlDelete = false;
     private String     tenant;
-    private boolean    excludeTenantInDbName;
     private AtomicLong receivedMessageCount;
 
     @Override
     public CanalEntry.Entry parse(LogMessage message, boolean isSeek) throws CanalParseException {
-        // LogProxy的连接参数中包含DML的白名单，因此这里只需要检查黑名单
-        String name = getTargetDbName(message.getDbName()) + "." + message.getTableName();
-        if (nameBlackFilter != null && nameBlackFilter.filter(name)) {
-            return null;
-        }
         CanalEntry.Entry entry = null;
         try {
             switch (message.getOpt()) {
@@ -159,13 +153,11 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
     private CanalEntry.Entry parseDmlRecord(LogMessage message, CanalEntry.EventType eventType) throws UnsupportedEncodingException {
         messageCount();
         if (filterQueryDml || (filterDmlInsert && eventType.equals(CanalEntry.EventType.INSERT)) || (filterDmlUpdate
-                                                                                                     && eventType.equals(
-            CanalEntry.EventType.UPDATE)) || (filterDmlDelete && eventType.equals(CanalEntry.EventType.DELETE))) {
+                && eventType.equals(CanalEntry.EventType.UPDATE)) || (filterDmlDelete && eventType.equals(CanalEntry.EventType.DELETE))) {
             return null;
         }
 
-        // 4.x 开始 libobcdc 不再支持库表级别的数据订阅，因此需要在消费端进行过滤
-        if (shouldBeFiltered(getTargetDbName(message.getDbName()), message.getTableName())) {
+        if (shouldBeFiltered(String.format("%s.%s", getTargetDbName(message.getDbName()), message.getTableName()))) {
             return null;
         }
 
@@ -205,14 +197,13 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
         String dbName = null;
         String table = null;
         List<DdlResult> ddlResults = DruidDdlParser.parse(ddl, getTargetDbName(message.getDbName()));
-        if (ddlResults.size() > 0) {
+        if (!ddlResults.isEmpty()) {
             DdlResult ddlResult = ddlResults.get(0);
             eventType = ddlResult.getType();
             dbName = ddlResult.getSchemaName();
             table = ddlResult.getTableName();
 
-            // LogProxy对DDL没有过滤，而且ddl的message中没有表名，这里单独处理
-            if (shouldBeFiltered(dbName, table)) {
+            if (shouldBeFiltered(String.format("%s.%s", dbName, table))) {
                 return null;
             }
 
@@ -232,10 +223,8 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
         return createEntry(header, CanalEntry.EntryType.ROWDATA, rowChangeBuilder.build().toByteString());
     }
 
-    private boolean shouldBeFiltered(String databaseName, String tableName) {
-        String tableFullName = String.format("%s.%s.%s", tenant, databaseName, tableName);
-        return (nameFilter != null && !nameFilter.filter(tableFullName))
-                || (nameBlackFilter != null && nameBlackFilter.filter(tableFullName));
+    private boolean shouldBeFiltered(String tableName) {
+        return (nameFilter != null && !nameFilter.filter(tableName)) || (nameBlackFilter != null && nameBlackFilter.filter(tableName));
     }
 
     private CanalEntry.Entry parseHeartBeatRecord(LogMessage message) {
@@ -375,7 +364,7 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
      * @return 目标库名
      */
     private String getTargetDbName(String dbName) {
-        if (excludeTenantInDbName && StringUtils.isNotBlank(dbName) && dbName.length() > tenant.length()) {
+        if (StringUtils.isNotBlank(dbName) && dbName.length() > tenant.length()) {
             return dbName.replace(tenant + ".", "");
         }
         return dbName;
@@ -399,10 +388,6 @@ public class LogProxyMessageParser extends AbstractBinlogParser<LogMessage> {
 
     public void setTenant(String tenant) {
         this.tenant = tenant;
-    }
-
-    public void setExcludeTenantInDbName(boolean excludeTenantInDbName) {
-        this.excludeTenantInDbName = excludeTenantInDbName;
     }
 
     public void setReceivedMessageCount(AtomicLong receivedMessageCount) {

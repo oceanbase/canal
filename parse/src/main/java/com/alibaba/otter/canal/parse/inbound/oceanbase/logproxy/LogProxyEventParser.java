@@ -42,6 +42,7 @@ public class LogProxyEventParser extends AbstractOceanBaseEventParser<LogMessage
 
     @Override
     protected OceanBaseConnection buildOceanBaseConnection() {
+        logProxyConfig.setTableWhiteList(tenant + ".*.*");
         // priority of start position source: position manager > properties file > zero value
         EntryPosition startPosition = findStartPosition();
         if (startPosition != null) {
@@ -84,7 +85,6 @@ public class LogProxyEventParser extends AbstractOceanBaseEventParser<LogMessage
         parser.setFilterDmlUpdate(filterDmlUpdate);
         parser.setFilterDmlDelete(filterDmlDelete);
         parser.setTenant(tenant);
-        parser.setExcludeTenantInDbName(excludeTenantInDbName);
         parser.setReceivedMessageCount(receivedBinlogCount);
         return parser;
     }

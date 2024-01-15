@@ -18,7 +18,6 @@ import com.alibaba.otter.canal.protocol.position.LogPosition;
 public abstract class AbstractOceanBaseEventParser<EVENT> extends AbstractEventParser<EVENT> {
 
     protected String  tenant;
-    protected boolean excludeTenantInDbName;
 
     /**
      * 创建一个OceanBaseConnection实例
@@ -72,9 +71,5 @@ public abstract class AbstractOceanBaseEventParser<EVENT> extends AbstractEventP
 
     public void setTenant(String tenant) {
         this.tenant = tenant;
-    }
-
-    public void setExcludeTenantInDbName(boolean excludeTenantInDbName) {
-        this.excludeTenantInDbName = excludeTenantInDbName;
     }
 }
